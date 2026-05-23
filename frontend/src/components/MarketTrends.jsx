@@ -313,7 +313,8 @@ const MarketTrends = ({ walletAddress, tokenBalance, fetchBalance }) => {
 
       // Step 2: Create Listing
       alert("Step 2/2: Please confirm the listing transaction in MetaMask.");
-      const tx = await marketplaceContract.listTokens(amountVal, weiPrice);
+      // Pass integer amount (uint256 requires no decimals)
+      const tx = await marketplaceContract.listTokens(BigInt(Math.floor(amountVal)), weiPrice);
       alert(`Listing Transaction Sent! Hash: ${tx.hash}`);
       await tx.wait();
       
@@ -338,10 +339,18 @@ const MarketTrends = ({ walletAddress, tokenBalance, fetchBalance }) => {
 
       const provider = new ethers.BrowserProvider(window.ethereum);
       const signer = await provider.getSigner();
-      const marketplaceContract = new ethers.Contract(MARKETPLACE_ADDRESS, CarbonMarketplaceABI.abi, signer);
-      
+
+      // Check buyer has enough Sepolia ETH
+      const balance = await provider.getBalance(walletAddress);
       const totalPrice = BigInt(pricePerToken) * BigInt(amount);
-      const tx = await marketplaceContract.buyTokens(listingId, { value: totalPrice });
+      if (balance < totalPrice) {
+        alert(`Insufficient Sepolia ETH!\n\nRequired: ${ethers.formatEther(totalPrice)} ETH\nYour balance: ${ethers.formatEther(balance)} ETH\n\nGet free Sepolia ETH from: https://sepoliafaucet.com`);
+        setTradingInProgress(false);
+        return;
+      }
+
+      const marketplaceContract = new ethers.Contract(MARKETPLACE_ADDRESS, CarbonMarketplaceABI.abi, signer);
+      const tx = await marketplaceContract.buyTokens(BigInt(listingId), { value: totalPrice });
       alert(`Purchase Transaction Sent! Hash: ${tx.hash}`);
       await tx.wait();
       
@@ -349,7 +358,9 @@ const MarketTrends = ({ walletAddress, tokenBalance, fetchBalance }) => {
       fetchListings();
     } catch (err) {
       console.error("Purchase failed:", err);
-      alert("Transaction rejected or failed.");
+      // Surface the actual revert reason if available
+      const reason = err?.reason || err?.data?.message || err?.shortMessage || err?.message || 'Unknown error';
+      alert(`Transaction failed: ${reason}\n\nMake sure you have enough Sepolia ETH to cover the purchase price + gas fees.`);
     } finally {
       setTradingInProgress(false);
     }
